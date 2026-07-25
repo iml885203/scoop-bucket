@@ -1,0 +1,66 @@
+name: Update manifests
+
+on:
+  schedule:
+    - cron: "29 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: write
+  pull-requests: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Check latest Tunlease release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag=$(gh api repos/iml885203/tunlease/releases/latest --jq .tag_name)
+          version=${tag#v}
+          current=$(jq -r .version bucket/tunlease.json)
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [ "$version" = "$current" ]; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Update manifest
+        if: steps.release.outputs.current != 'true'
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          checksum_url="https://github.com/iml885203/tunlease/releases/download/${TAG}/tunle-windows-amd64.exe.sha256"
+          sha=$(curl -fsSL "$checksum_url" | cut -d' ' -f1)
+          url="https://github.com/iml885203/tunlease/releases/download/${TAG}/tunle-windows-amd64.exe"
+          jq --arg version "$VERSION" --arg url "$url" --arg sha "$sha" \
+            '.version = $version |
+             .architecture["64bit"].url = $url |
+             .architecture["64bit"].hash = $sha' \
+            bucket/tunlease.json > bucket/tunlease.json.tmp
+          mv bucket/tunlease.json.tmp bucket/tunlease.json
+      - name: Open update pull request
+        if: steps.release.outputs.current != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          branch="automation/tunlease-${VERSION}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$branch"
+          git add bucket/tunlease.json
+          git commit -m "tunlease ${VERSION}"
+          git push --force-with-lease origin "$branch"
+          if ! gh pr view "$branch" >/dev/null 2>&1; then
+            gh pr create \
+              --base main \
+              --head "$branch" \
+              --title "tunlease ${VERSION}" \
+              --body "Automated Scoop manifest update for Tunlease ${VERSION}."
+          fi
+          gh workflow run test.yml --ref "$branch"

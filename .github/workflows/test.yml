@@ -1,0 +1,30 @@
+name: Test manifests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Validate JSON
+        shell: pwsh
+        run: Get-Content bucket/tunlease.json | ConvertFrom-Json | Out-Null
+      - name: Install with Scoop
+        shell: pwsh
+        run: |
+          Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+          Invoke-RestMethod -Uri https://get.scoop.sh | Invoke-Expression
+          scoop install ./bucket/tunlease.json
+      - name: Test command and completion
+        shell: pwsh
+        run: |
+          tunle --version
+          tunle completion powershell | Select-Object -First 1
