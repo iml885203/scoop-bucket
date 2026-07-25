@@ -63,4 +63,29 @@ jobs:
               --title "tunlease ${VERSION}" \
               --body "Automated Scoop manifest update for Tunlease ${VERSION}."
           fi
+          previous_run_id=$(gh run list \
+            --workflow test.yml \
+            --branch "$branch" \
+            --event workflow_dispatch \
+            --limit 1 \
+            --json databaseId \
+            --jq '.[0].databaseId')
           gh workflow run test.yml --ref "$branch"
+          for _ in $(seq 1 20); do
+            run_id=$(gh run list \
+              --workflow test.yml \
+              --branch "$branch" \
+              --event workflow_dispatch \
+              --limit 1 \
+              --json databaseId \
+              --jq '.[0].databaseId')
+            [ -n "$run_id" ] && [ "$run_id" != "$previous_run_id" ] && break
+            run_id=
+            sleep 3
+          done
+          [ -n "${run_id:-}" ] || {
+            echo "test workflow did not start" >&2
+            exit 1
+          }
+          gh run watch "$run_id" --exit-status
+          gh pr merge "$branch" --squash --delete-branch
