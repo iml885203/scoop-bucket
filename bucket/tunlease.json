@@ -1,12 +1,12 @@
 {
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Claim fixed callback paths and tunnel them to localhost",
   "homepage": "https://github.com/iml885203/tunlease",
   "license": "MIT",
   "architecture": {
     "64bit": {
-      "url": "https://github.com/iml885203/tunlease/releases/download/v0.4.0/tunle-windows-amd64.exe",
-      "hash": "a9d950d70b0f4c7ca0e71fccdef6396428ef83609b588284e799654ce0496fef"
+      "url": "https://github.com/iml885203/tunlease/releases/download/v0.4.1/tunle-windows-amd64.exe",
+      "hash": "786aa195094194e804d07d9bc64fee2b1a3008409a3032f7259083ad22c22ae1"
     }
   },
   "bin": [
