@@ -34,13 +34,15 @@ jobs:
           TAG: ${{ steps.release.outputs.tag }}
           VERSION: ${{ steps.release.outputs.version }}
         run: |
-          checksum_url="https://github.com/iml885203/tunlease/releases/download/${TAG}/tunle-windows-amd64.exe.sha256"
+          checksum_url="https://github.com/iml885203/tunlease/releases/download/${TAG}/tul-windows-amd64.exe.sha256"
           sha=$(curl -fsSL "$checksum_url" | cut -d' ' -f1)
-          url="https://github.com/iml885203/tunlease/releases/download/${TAG}/tunle-windows-amd64.exe"
+          url="https://github.com/iml885203/tunlease/releases/download/${TAG}/tul-windows-amd64.exe"
           jq --arg version "$VERSION" --arg url "$url" --arg sha "$sha" \
             '.version = $version |
              .architecture["64bit"].url = $url |
-             .architecture["64bit"].hash = $sha' \
+             .architecture["64bit"].hash = $sha |
+             .bin = [["tul-windows-amd64.exe", "tul"]] |
+             .autoupdate.architecture["64bit"].url = "https://github.com/iml885203/tunlease/releases/download/v$version/tul-windows-amd64.exe"' \
             bucket/tunlease.json > bucket/tunlease.json.tmp
           mv bucket/tunlease.json.tmp bucket/tunlease.json
       - name: Open update pull request
