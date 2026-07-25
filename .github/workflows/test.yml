@@ -23,6 +23,7 @@ jobs:
           Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
           Invoke-RestMethod -Uri https://get.scoop.sh | Invoke-Expression
           scoop install "https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/bucket/tunlease.json"
+          Join-Path $HOME "scoop\shims" | Out-File -FilePath $env:GITHUB_PATH -Append
       - name: Test command and completion
         shell: pwsh
         run: |
