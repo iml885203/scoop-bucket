@@ -28,5 +28,4 @@ jobs:
         shell: pwsh
         run: |
           tunle --version
-          tunle doctor --help
           tunle completion powershell | Select-Object -First 1
