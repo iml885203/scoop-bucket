@@ -22,7 +22,7 @@ jobs:
         run: |
           Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
           Invoke-RestMethod -Uri https://get.scoop.sh | Invoke-Expression
-          scoop install ./bucket/tunlease.json
+          scoop install "https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/bucket/tunlease.json"
       - name: Test command and completion
         shell: pwsh
         run: |
