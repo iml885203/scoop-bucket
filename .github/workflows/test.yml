@@ -16,18 +16,24 @@ jobs:
       - uses: actions/checkout@v5
       - name: Validate JSON
         shell: pwsh
-        run: Get-Content bucket/tunlease.json | ConvertFrom-Json | Out-Null
+        run: |
+          python .github/scripts/semver-not-older.py --self-test
+          Get-ChildItem bucket/*.json | ForEach-Object { Get-Content $_ | ConvertFrom-Json | Out-Null }
       - name: Install with Scoop
         shell: pwsh
         run: |
           Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
           Invoke-RestMethod -Uri https://get.scoop.sh | Invoke-Expression
           scoop install "https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/bucket/tunlease.json"
+          scoop install "https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/bucket/orbit.json"
           Join-Path $HOME "scoop\shims" | Out-File -FilePath $env:GITHUB_PATH -Append
       - name: Test command and completion
         shell: pwsh
         run: |
-          $manifest = Get-Content bucket/tunlease.json | ConvertFrom-Json
-          $command = $manifest.bin[0][1]
-          & $command --version
-          & $command completion powershell | Select-Object -First 1
+          tul --version
+          tul completion powershell | Select-Object -First 1
+          $expected = (Get-Content bucket/orbit.json | ConvertFrom-Json).version
+          $actual = orbit --version
+          if ($actual -notmatch "^v$([regex]::Escape($expected))(?:\s|$)") {
+            throw "Orbit version '$actual' does not match manifest $expected"
+          }
