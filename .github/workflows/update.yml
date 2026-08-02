@@ -4,6 +4,27 @@ on:
   schedule:
     - cron: "29 */6 * * *"
   workflow_dispatch:
+    inputs:
+      project:
+        description: Manifest to update
+        required: true
+        default: tunlease
+        type: choice
+        options: [tunlease, orbit]
+      version:
+        description: Exact released tag; defaults to the latest release
+        required: false
+        type: string
+      correlation:
+        description: Caller-provided run correlation
+        required: false
+        type: string
+
+run-name: Update ${{ inputs.project || 'tunlease' }} ${{ inputs.version || 'latest' }} ${{ inputs.correlation }}
+
+concurrency:
+  group: update-${{ inputs.project || 'tunlease' }}
+  cancel-in-progress: false
 
 permissions:
   actions: write
@@ -15,21 +36,33 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - name: Check latest Tunlease release
+      - name: Resolve release
         id: release
         env:
           GH_TOKEN: ${{ github.token }}
+          REQUESTED_PROJECT: ${{ inputs.project }}
+          REQUESTED_VERSION: ${{ inputs.version }}
         run: |
-          tag=$(gh api repos/iml885203/tunlease/releases/latest --jq .tag_name)
+          set -euo pipefail
+          project="${REQUESTED_PROJECT:-tunlease}"
+          case "$project" in tunlease|orbit) ;; *) echo "unsupported project: $project" >&2; exit 1;; esac
+          tag="$REQUESTED_VERSION"
+          if [ -z "$tag" ]; then
+            tag=$(gh api "repos/iml885203/$project/releases/latest" --jq .tag_name)
+          fi
+          if ! [[ "$tag" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "invalid release tag: $tag" >&2
+            exit 1
+          fi
           version=${tag#v}
-          current=$(jq -r .version bucket/tunlease.json)
+          current=$(jq -r .version "bucket/$project.json")
+          echo "project=$project" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          if [ "$version" = "$current" ]; then
-            echo "current=true" >> "$GITHUB_OUTPUT"
-          fi
-      - name: Update manifest
-        if: steps.release.outputs.current != 'true'
+          python3 .github/scripts/semver-not-older.py "$current" "$version"
+          if [ "$version" = "$current" ]; then echo "current=true" >> "$GITHUB_OUTPUT"; fi
+      - name: Update Tunlease manifest
+        if: steps.release.outputs.current != 'true' && steps.release.outputs.project == 'tunlease'
         env:
           TAG: ${{ steps.release.outputs.tag }}
           VERSION: ${{ steps.release.outputs.version }}
@@ -45,49 +78,55 @@ jobs:
              .autoupdate.architecture["64bit"].url = "https://github.com/iml885203/tunlease/releases/download/v$version/tul-windows-amd64.exe"' \
             bucket/tunlease.json > bucket/tunlease.json.tmp
           mv bucket/tunlease.json.tmp bucket/tunlease.json
-      - name: Open update pull request
+      - name: Update Orbit manifest
+        if: steps.release.outputs.current != 'true' && steps.release.outputs.project == 'orbit'
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          curl -fsSL "https://github.com/iml885203/orbit/releases/download/${TAG}/checksums.txt" -o checksums.txt
+          amd64=$(awk '$2 == "orbit-windows-amd64.exe" || $2 == "*orbit-windows-amd64.exe" { print $1; exit }' checksums.txt)
+          arm64=$(awk '$2 == "orbit-windows-arm64.exe" || $2 == "*orbit-windows-arm64.exe" { print $1; exit }' checksums.txt)
+          [ -n "$amd64" ] && [ -n "$arm64" ] || { echo "Orbit Windows checksum missing" >&2; exit 1; }
+          jq --arg version "$VERSION" --arg tag "$TAG" --arg amd64 "$amd64" --arg arm64 "$arm64" \
+            '.version = $version |
+             .architecture["64bit"].url = "https://github.com/iml885203/orbit/releases/download/\($tag)/orbit-windows-amd64.exe" |
+             .architecture["64bit"].hash = $amd64 |
+             .architecture.arm64.url = "https://github.com/iml885203/orbit/releases/download/\($tag)/orbit-windows-arm64.exe" |
+             .architecture.arm64.hash = $arm64' \
+            bucket/orbit.json > bucket/orbit.json.tmp
+          mv bucket/orbit.json.tmp bucket/orbit.json
+          rm checksums.txt
+      - name: Open, test, and merge update
         if: steps.release.outputs.current != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
+          PROJECT: ${{ steps.release.outputs.project }}
           VERSION: ${{ steps.release.outputs.version }}
         run: |
-          branch="automation/tunlease-${VERSION}"
+          set -euo pipefail
+          branch="automation/${PROJECT}-${VERSION}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout -B "$branch"
-          git add bucket/tunlease.json
-          git commit -m "tunlease ${VERSION}"
+          git add "bucket/${PROJECT}.json"
+          git commit -m "${PROJECT} ${VERSION}"
           git push --force origin "$branch"
           if ! gh pr view "$branch" >/dev/null 2>&1; then
-            gh pr create \
-              --base main \
-              --head "$branch" \
-              --title "tunlease ${VERSION}" \
-              --body "Automated Scoop manifest update for Tunlease ${VERSION}."
+            gh pr create --base main --head "$branch" --title "${PROJECT} ${VERSION}" \
+              --body "Automated Scoop manifest update for ${PROJECT} ${VERSION}."
           fi
-          previous_run_id=$(gh run list \
-            --workflow test.yml \
-            --branch "$branch" \
-            --event workflow_dispatch \
-            --limit 1 \
-            --json databaseId \
-            --jq '.[0].databaseId')
+          previous_run_id=$(gh run list --workflow test.yml --branch "$branch" --event workflow_dispatch \
+            --limit 1 --json databaseId --jq '.[0].databaseId')
           gh workflow run test.yml --ref "$branch"
           for _ in $(seq 1 20); do
-            run_id=$(gh run list \
-              --workflow test.yml \
-              --branch "$branch" \
-              --event workflow_dispatch \
-              --limit 1 \
-              --json databaseId \
-              --jq '.[0].databaseId')
+            run_id=$(gh run list --workflow test.yml --branch "$branch" --event workflow_dispatch \
+              --limit 1 --json databaseId --jq '.[0].databaseId')
             [ -n "$run_id" ] && [ "$run_id" != "$previous_run_id" ] && break
             run_id=
             sleep 3
           done
-          [ -n "${run_id:-}" ] || {
-            echo "test workflow did not start" >&2
-            exit 1
-          }
+          [ -n "${run_id:-}" ] || { echo "test workflow did not start" >&2; exit 1; }
           gh run watch "$run_id" --exit-status
           gh pr merge "$branch" --squash --delete-branch
