@@ -27,15 +27,20 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  actions: write
-  contents: write
-  pull-requests: write
+  contents: read
 
 jobs:
-  update:
+  resolve:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      current: ${{ steps.release.outputs.current }}
+      project: ${{ steps.release.outputs.project }}
+      tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - name: Resolve release
         id: release
         env:
@@ -61,11 +66,41 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           python3 .github/scripts/semver-not-older.py "$current" "$version"
           if [ "$version" = "$current" ]; then echo "current=true" >> "$GITHUB_OUTPUT"; fi
-      - name: Update Tunlease manifest
-        if: steps.release.outputs.current != 'true' && steps.release.outputs.project == 'tunlease'
+
+  verify-orbit:
+    needs: resolve
+    if: needs.resolve.outputs.project == 'orbit'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Verify immutable Orbit release
+        uses: iml885203/orbit/.github/actions/verify-orbit-release@d7f2c503228479f27162e558720a6e679627f809 # v0.16.0 release-security boundary
         env:
-          TAG: ${{ steps.release.outputs.tag }}
-          VERSION: ${{ steps.release.outputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        with:
+          mode: published
+          tag: ${{ needs.resolve.outputs.tag }}
+
+  update:
+    needs: [resolve, verify-orbit]
+    if: >-
+      always() &&
+      needs.resolve.result == 'success' &&
+      needs.resolve.outputs.current != 'true' &&
+      (needs.resolve.outputs.project != 'orbit' || needs.verify-orbit.result == 'success')
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - name: Update Tunlease manifest
+        if: needs.resolve.outputs.project == 'tunlease'
+        env:
+          TAG: ${{ needs.resolve.outputs.tag }}
+          VERSION: ${{ needs.resolve.outputs.version }}
         run: |
           checksum_url="https://github.com/iml885203/tunlease/releases/download/${TAG}/tul-windows-amd64.exe.sha256"
           sha=$(curl -fsSL "$checksum_url" | cut -d' ' -f1)
@@ -79,10 +114,10 @@ jobs:
             bucket/tunlease.json > bucket/tunlease.json.tmp
           mv bucket/tunlease.json.tmp bucket/tunlease.json
       - name: Update Orbit manifest
-        if: steps.release.outputs.current != 'true' && steps.release.outputs.project == 'orbit'
+        if: needs.resolve.outputs.project == 'orbit'
         env:
-          TAG: ${{ steps.release.outputs.tag }}
-          VERSION: ${{ steps.release.outputs.version }}
+          TAG: ${{ needs.resolve.outputs.tag }}
+          VERSION: ${{ needs.resolve.outputs.version }}
         run: |
           set -euo pipefail
           curl -fsSL "https://github.com/iml885203/orbit/releases/download/${TAG}/checksums.txt" -o checksums.txt
@@ -99,11 +134,10 @@ jobs:
           mv bucket/orbit.json.tmp bucket/orbit.json
           rm checksums.txt
       - name: Open, test, and merge update
-        if: steps.release.outputs.current != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          PROJECT: ${{ steps.release.outputs.project }}
-          VERSION: ${{ steps.release.outputs.version }}
+          PROJECT: ${{ needs.resolve.outputs.project }}
+          VERSION: ${{ needs.resolve.outputs.version }}
         run: |
           set -euo pipefail
           branch="automation/${PROJECT}-${VERSION}"
