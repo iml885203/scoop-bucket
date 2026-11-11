@@ -75,7 +75,7 @@ jobs:
       contents: read
     steps:
       - name: Verify immutable Orbit release
-        uses: iml885203/orbit/.github/actions/verify-orbit-release@d7f2c503228479f27162e558720a6e679627f809 # v0.16.0 release-security boundary
+        uses: iml885203/orbit/.github/actions/verify-orbit-release@5e966f7850d42d61336aa750bfc68e1081c826f0 # v0.16.0 release-security boundary
         env:
           GH_TOKEN: ${{ github.token }}
         with:
