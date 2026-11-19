@@ -1,12 +1,12 @@
 {
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "Run host services and containers as one local development environment",
   "homepage": "https://github.com/iml885203/orbit",
   "license": "MIT",
   "architecture": {
     "64bit": {
-      "url": "https://github.com/iml885203/orbit/releases/download/v1.3.0/orbit-windows-amd64.exe",
-      "hash": "d9721237856024e14d11af11b09b859fe281f1624ab2686bcffe2812c20e607c",
+      "url": "https://github.com/iml885203/orbit/releases/download/v1.4.0/orbit-windows-amd64.exe",
+      "hash": "b513759a08cec5efbcc8a01b7d442b718912c537c96523906c5980a38249a47c",
       "bin": [
         [
           "orbit-windows-amd64.exe",
@@ -15,8 +15,8 @@
       ]
     },
     "arm64": {
-      "url": "https://github.com/iml885203/orbit/releases/download/v1.3.0/orbit-windows-arm64.exe",
-      "hash": "4156b4e1717bcbd626ebd622d3ef501213fb30dcb6a24ec302039ae4f982358f",
+      "url": "https://github.com/iml885203/orbit/releases/download/v1.4.0/orbit-windows-arm64.exe",
+      "hash": "736763a287d1fdc53fcc9dbff4fe5960274f630d76bf709586cc57d542360d59",
       "bin": [
         [
           "orbit-windows-arm64.exe",
